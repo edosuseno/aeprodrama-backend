@@ -1,0 +1,342 @@
+import axios from 'axios';
+import CryptoJS from 'crypto-js';
+import PQueue from 'p-queue';
+import NodeCache from 'node-cache';
+import dotenv from 'dotenv';
+import TokenGenerator from '../utils/TokenGenerator.js';
+
+dotenv.config();
+
+/**
+ * BASE PROVIDER CLASS
+ * Fondasi utama untuk semua layanan drama (ReelShort, DramaBox, etc.)
+ * Dilengkapi dengan:
+ * - Auto Token & Signature Generation
+ * - Rate Limiting / Queue System
+ * - Advanced Caching System
+ * - Unlock Bypass
+ */
+class BaseProvider {
+    constructor(sourceName, baseUrl) {
+        this.sourceName = sourceName;
+        this.baseUrl = baseUrl;
+
+        // Queue system untuk mengontrol arus request ke upstream
+        // Kita naikkan concurrency agar loading lebih cepat, tapi tetap terkontrol
+        this.queue = new PQueue({
+            concurrency: 10,
+            interval: 100,
+            intervalCap: 10
+        });
+
+        // Cache dengan TTL 6 JAM (21600s) - Rate limit sangat ketat!
+        // API limit: 15 requests/60s, jadi cache harus agresif
+        this.cache = new NodeCache({
+            stdTTL: 21600,      // 6 jam (was 3600 = 1 jam)
+            checkperiod: 1800,  // Check setiap 30 menit
+            useClones: false    // Performance optimization
+        });
+
+        // Secret Key untuk enkripsi ke Frontend
+        // Fix: Added .trim().replace(/\\r\\n|\\r|\\n/g, '') to handle Vercel copy-paste mistakes
+        let secret = process.env.API_SECRET || 'Sansekai-SekaiDrama';
+        this.secretKey = secret.replace(/\r\n|\r|\n/g, '').trim();
+
+        this.api = axios.create({
+            baseURL: this.baseUrl,
+            timeout: 10000, // Turun dari 20 detik ke 10 detik
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+
+        // Counter untuk monitoring
+        this.requestCount = 0;
+        this.cacheHits = 0;
+    }
+
+    /**
+     * Mendapatkan URL Backend secara dinamis untuk keperluan proxy/absolute links
+     */
+    getBackendUrl() {
+        let url = process.env.BACKEND_URL;
+        
+        // Deteksi fitur Vercel (System Variable)
+        if (!url && process.env.VERCEL_URL) {
+            url = `https://${process.env.VERCEL_URL}`;
+        }
+        
+        // Fallback ke localhost jika tidak ada env
+        if (!url) {
+            url = 'http://localhost:5001';
+        }
+        
+        return url.endsWith('/') ? url.slice(0, -1) : url;
+    }
+
+    /**
+     * Enkripsi data sebelum dikirim ke Frontend
+     */
+    encrypt(data) {
+        try {
+            const jsonStr = JSON.stringify(data);
+            return CryptoJS.AES.encrypt(jsonStr, this.secretKey).toString();
+        } catch (e) {
+            return '';
+        }
+    }
+
+    /**
+     * Dekripsi data dari Upstream jika dibungkus (Sansekai way)
+     */
+    decrypt(ciphertext) {
+        try {
+            if (!ciphertext || typeof ciphertext !== 'string') return ciphertext;
+            const bytes = CryptoJS.AES.decrypt(ciphertext, this.secretKey);
+            const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+            if (!decryptedString) return null;
+            return JSON.parse(decryptedString);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * Generate headers dengan auto signature
+     */
+    getAuthHeaders(customParams = {}) {
+        return TokenGenerator.generateRequestHeaders(
+            this.sourceName.toLowerCase(),
+            customParams
+        );
+    }
+
+    /**
+     * Clear cache untuk endpoint tertentu atau semua
+     */
+    clearCache(pattern = null) {
+        if (pattern) {
+            const keys = this.cache.keys();
+            const matchedKeys = keys.filter(key => key.includes(pattern));
+            matchedKeys.forEach(key => this.cache.del(key));
+            console.log(`🗑️  [${this.sourceName}] Cleared ${matchedKeys.length} cache entries matching "${pattern}"`);
+        } else {
+            this.cache.flushAll();
+            console.log(`🗑️  [${this.sourceName}] All cache cleared`);
+        }
+    }
+
+    /**
+     * Get cache stats
+     */
+    getCacheStats() {
+        return {
+            keys: this.cache.keys().length,
+            hits: this.cacheHits,
+            requests: this.requestCount,
+            hitRate: this.requestCount > 0 ? ((this.cacheHits / this.requestCount) * 100).toFixed(2) + '%' : '0%'
+        };
+    }
+
+    /**
+     * Request wrapper dengan Queue, Cache, dan Auto Signature
+     */
+    async request(endpoint, params = {}, options = {}) {
+        const {
+            useCache = true,
+            useQueue = true,
+            bypassUnlock = true,
+            customHeaders = {}
+        } = options;
+
+        const cacheKey = `${this.sourceName}:${endpoint}:${JSON.stringify(params)}`;
+        this.requestCount++;
+
+        // Check cache
+        if (useCache) {
+            const cached = this.cache.get(cacheKey);
+            if (cached) {
+                this.cacheHits++;
+                console.log(`💾 [${this.sourceName}] Cache hit for ${endpoint}`);
+                return cached;
+            }
+        }
+
+        const executeRequest = async () => {
+            try {
+                console.log(`🌐 [${this.sourceName}] Fetching: ${endpoint}`);
+
+                const response = await this.api.get(endpoint, {
+                    params,
+                    headers: {
+                        ...this.getAuthHeaders(params),
+                        ...customHeaders
+                    }
+                });
+
+                const data = response.data;
+
+                // Cache result
+                if (useCache && data) {
+                    this.cache.set(cacheKey, data);
+                }
+
+                return data;
+            } catch (error) {
+                console.log(`❌ [${this.sourceName}] Error:`, error.message);
+                return {
+                    success: false,
+                    message: error.message
+                };
+            }
+        };
+
+        // Execute dengan atau tanpa queue
+        if (useQueue) {
+            return await this.queue.add(executeRequest);
+        } else {
+            return await executeRequest();
+        }
+    }
+
+    /**
+     * Format unlock status
+     */
+    formatUnlockStatus(episode) {
+        if (!episode) return episode;
+
+        return {
+            ...episode,
+            isCharge: 0,
+            chargeChapter: false,
+            unlock: true,
+            isUnlocked: true,
+            locked: false,
+            isPaid: true,
+            isFree: true
+        };
+    }
+
+    /**
+     * Helper request dengan RETRY & FALLBACK sistem universal
+     */
+    async _pureRequest(path, params = {}, retries = 2, options = {}) {
+        const { forceReferer, forceOrigin, ttl: customTtl } = options;
+        const isMegawe = path.includes('megawe.net');
+        const cacheKey = `pure:${path}:${JSON.stringify(params)}`;
+
+        // Deteksi Otomatis TTL: Jika detail/info, simpan lebih lama
+        let ttl = customTtl || 600; // Default 10 menit
+        const lowerPath = path.toLowerCase();
+        
+        // JANGAN cache video token (watch/stream/allepisode) dalam waktu lama!
+        // Platform spt FlickReels/FreeReels memuat Stream URL bersama detail, yang tokennya cepat basi (< 30 mnt).
+        if (lowerPath.includes('watch') || lowerPath.includes('stream') || lowerPath.includes('allepisode')) {
+            ttl = 30; // 30 Detik saja agar setiap pindah rute refresh URL token baru namun tetap mencegah spam sesaat
+        } else if (lowerPath.includes('detail') || lowerPath.includes('info')) {
+            ttl = 120; // 2 Menit untuk detail murni agar up-to-date
+        }
+
+        // Cek Cache In-Memory
+        const cached = this.cache.get(cacheKey);
+        if (cached) return cached;
+
+        try {
+            // HEADER POLOS & MINIMALIS (Stealth Mode)
+            // Terkadang header yang terlalu lengkap justru mencurigakan bagi WAF sederhana
+            const headers = {
+                'Accept': 'application/json, text/plain, */*',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                // HAPUS ORIGIN & REFERER agar terlihat seperti direct access
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            };
+
+            if (forceReferer) headers['Referer'] = forceReferer;
+            if (forceOrigin) headers['Origin'] = forceOrigin;
+
+            // [FIX] Inject Auth Headers jika request ke Sansekai
+            if (path.includes('sansekai.my.id') || (this.baseUrl && path.includes(this.baseUrl))) {
+                // Trik: Gunakan identitas 'dramabox' karena terbukti lebih stabil/tidak di-block
+                const authHeaders = TokenGenerator.generateRequestHeaders('dramabox', params);
+                Object.assign(headers, authHeaders);
+
+                // BYPASS VERCEL BLOCK: Spoof IP Indonesia (Telkomsel range)
+                const randomIP = `114.122.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+                headers['X-Forwarded-For'] = randomIP;
+                headers['X-Real-IP'] = randomIP;
+            }
+
+            const res = await axios.get(path, {
+                params,
+                headers: {
+                    ...headers,
+                    'X-Source': this.sourceName.toLowerCase()
+                },
+                timeout: 15000, // Tingkatkan ke 15 detik (was 3000/4000)
+                validateStatus: (status) => status < 500
+            });
+
+            if (res.status === 403 || res.status === 401) {
+                console.warn(`🔒 [${this.sourceName}] Blocked (403/401) at ${path}`);
+                throw new Error(`Access Forbidden (${res.status})`);
+            }
+
+            if (res.status === 404) {
+                // Throwing error allows switching to fallback provider
+                throw new Error('Not Found (404)');
+            }
+
+            const data = res.data;
+            if (!data) throw new Error('Empty data');
+
+            let result = data;
+            if (data && data.success && typeof data.data === 'string') {
+                result = this.decrypt(data.data);
+            }
+
+            // Validasi Data Kosong Megawe
+            const isEmptyData = isMegawe && !result.data && !result.list && !result.items && !Array.isArray(result);
+            if (isEmptyData && retries > 0) {
+                // Force retry kalau data kosong tapi status 200 (soft ban)
+                console.log(`⚠️ [${this.sourceName}] Soft ban / Empty data detected, retrying...`);
+                throw new Error('Soft Ban');
+            }
+
+            if (result) {
+                this.cache.set(cacheKey, result, ttl);
+            }
+
+            return result;
+
+        } catch (e) {
+            // RETRY MECHANISM
+            if (retries > 0) {
+                // Gunakan delay acak (1-2 detik) agar tidak terlihat seperti bot agresif
+                const delay = Math.floor(Math.random() * 1000) + 1000;
+                await new Promise(r => setTimeout(r, delay));
+                return this._pureRequest(path, params, retries - 1, options);
+            }
+
+            // FALLBACK KE SANSEKAI (Last Resort)
+            if (isMegawe && this.baseUrl && !path.includes(this.baseUrl)) {
+                let fallbackPath = path;
+                if (this.megaweBase && path.includes(this.megaweBase)) {
+                    fallbackPath = path.replace(this.megaweBase, this.baseUrl);
+                } else {
+                    fallbackPath = path.replace('https://api.megawe.net/api', 'https://api.sansekai.my.id/api');
+                }
+
+                if (fallbackPath !== path) {
+                    console.log(`🔄 [${this.sourceName}] Switching to fallback provider...`);
+                    return this._pureRequest(fallbackPath, params, 0, options);
+                }
+            }
+
+            return null;
+        }
+    }
+}
+
+export default BaseProvider;

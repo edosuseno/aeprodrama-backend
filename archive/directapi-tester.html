@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DirectAPI Tester - DramaBox</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .test-section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .result-box {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .result-box.show {
+            display: block;
+        }
+        
+        .loading {
+            color: #ffa500;
+        }
+        
+        .success {
+            color: #00ff00;
+        }
+        
+        .error {
+            color: #ff4444;
+        }
+        
+        .info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .info strong {
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 DirectAPI Tester</h1>
+        <p class="subtitle">Testing koneksi langsung ke API Official DramaBox</p>
+        
+        <div class="info">
+            <strong>ℹ️ Catatan:</strong> Tool ini akan mencoba berbagai kombinasi base URL dan signature strategy.
+            Pantau console browser (F12) untuk detail lengkap.
+        </div>
+        
+        <!-- Test Trending -->
+        <div class="test-section">
+            <h2>📊 Test Trending</h2>
+            <div class="input-group">
+                <button onclick="testTrending()">🚀 Test Trending API</button>
+            </div>
+            <div id="result-trending" class="result-box"></div>
+        </div>
+        
+        <!-- Test Detail -->
+        <div class="test-section">
+            <h2>📖 Test Detail</h2>
+            <div class="input-group">
+                <input type="text" id="detailBookId" placeholder="Masukkan Book ID (contoh: 42000004347)" value="42000004347">
+                <button onclick="testDetail()">🚀 Test Detail API</button>
+            </div>
+            <div id="result-detail" class="result-box"></div>
+        </div>
+        
+        <!-- Test Episodes -->
+        <div class="test-section">
+            <h2>🎬 Test Episodes</h2>
+            <div class="input-group">
+                <input type="text" id="episodesBookId" placeholder="Masukkan Book ID" value="42000004347">
+                <button onclick="testEpisodes()">🚀 Test Episodes API</button>
+            </div>
+            <div id="result-episodes" class="result-box"></div>
+        </div>
+        
+        <!-- Test Search -->
+        <div class="test-section">
+            <h2>🔍 Test Search</h2>
+            <div class="input-group">
+                <input type="text" id="searchQuery" placeholder="Masukkan kata kunci pencarian" value="love">
+                <button onclick="testSearch()">🚀 Test Search API</button>
+            </div>
+            <div id="result-search" class="result-box"></div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:5001';
+        
+        function showResult(elementId, message, type = 'info') {
+            const el = document.getElementById(elementId);
+            el.classList.add('show');
+            el.innerHTML = `<span class="${type}">${message}</span>`;
+        }
+        
+        async function testTrending() {
+            const resultId = 'result-trending';
+            showResult(resultId, '⏳ Testing trending endpoints...', 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/directapi/test/trending`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult(resultId, 
+                        `✅ SUCCESS!\n\n${JSON.stringify(data, null, 2)}`,
+                        'success'
+                    );
+                } else {
+                    showResult(resultId, 
+                        `❌ All attempts failed.\n\nCheck backend terminal for detailed logs.`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult(resultId, 
+                    `❌ Error: ${error.message}\n\nMake sure backend is running on ${API_BASE}`,
+                    'error'
+                );
+            }
+        }
+        
+        async function testDetail() {
+            const bookId = document.getElementById('detailBookId').value;
+            const resultId = 'result-detail';
+            
+            if (!bookId) {
+                showResult(resultId, '❌ Please enter a Book ID', 'error');
+                return;
+            }
+            
+            showResult(resultId, `⏳ Testing detail for Book ID: ${bookId}...`, 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/directapi/test/detail/${bookId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult(resultId, 
+                        `✅ SUCCESS!\n\n${JSON.stringify(data, null, 2)}`,
+                        'success'
+                    );
+                } else {
+                    showResult(resultId, 
+                        `❌ All attempts failed for Book ID: ${bookId}\n\nCheck backend terminal for detailed logs.`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult(resultId, 
+                    `❌ Error: ${error.message}`,
+                    'error'
+                );
+            }
+        }
+        
+        async function testEpisodes() {
+            const bookId = document.getElementById('episodesBookId').value;
+            const resultId = 'result-episodes';
+            
+            if (!bookId) {
+                showResult(resultId, '❌ Please enter a Book ID', 'error');
+                return;
+            }
+            
+            showResult(resultId, `⏳ Testing episodes for Book ID: ${bookId}...`, 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/directapi/test/episodes/${bookId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult(resultId, 
+                        `✅ SUCCESS!\n\n${JSON.stringify(data, null, 2)}`,
+                        'success'
+                    );
+                } else {
+                    showResult(resultId, 
+                        `❌ All attempts failed for Book ID: ${bookId}\n\nCheck backend terminal for detailed logs.`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult(resultId, 
+                    `❌ Error: ${error.message}`,
+                    'error'
+                );
+            }
+        }
+        
+        async function testSearch() {
+            const query = document.getElementById('searchQuery').value;
+            const resultId = 'result-search';
+            
+            if (!query) {
+                showResult(resultId, '❌ Please enter a search query', 'error');
+                return;
+            }
+            
+            showResult(resultId, `⏳ Searching for: ${query}...`, 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/directapi/test/search?query=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult(resultId, 
+                        `✅ SUCCESS!\n\n${JSON.stringify(data, null, 2)}`,
+                        'success'
+                    );
+                } else {
+                    showResult(resultId, 
+                        `❌ All attempts failed for query: ${query}\n\nCheck backend terminal for detailed logs.`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult(resultId, 
+                    `❌ Error: ${error.message}`,
+                    'error'
+                );
+            }
+        }
+        
+        // Auto-test on load (optional)
+        console.log('🎯 DirectAPI Tester loaded. Backend URL:', API_BASE);
+        console.log('📝 Click buttons to start testing!');
+    </script>
+</body>
+</html>
