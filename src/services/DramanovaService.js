@@ -308,7 +308,7 @@ class DramanovaService extends BaseProvider {
 
             if (mainUrl) {
                 return {
-                    videoUrl: mainUrl,
+                    videoUrl: mainUrl ? mainUrl.replace(/^http:\/\//i, 'https://') : mainUrl,
                     subtitles,
                     subtitle: subtitles.length > 0 ? subtitles[0].url : ''
                 };
@@ -318,7 +318,7 @@ class DramanovaService extends BaseProvider {
                 const bestVideo = playList.find(p => p.Definition === '720p' || p.Definition === '1080p') || playList[0];
                 const finalStreamUrl = bestVideo.PlayURL || bestVideo.MainPlayUrl || bestVideo.Url || bestVideo.url || bestVideo.playUrl;
                 return {
-                    videoUrl: finalStreamUrl,
+                    videoUrl: finalStreamUrl ? finalStreamUrl.replace(/^http:\/\//i, 'https://') : finalStreamUrl,
                     subtitles,
                     subtitle: subtitles.length > 0 ? subtitles[0].url : ''
                 };
