@@ -299,12 +299,8 @@ class DramanovaService extends BaseProvider {
             // GABUNGKAN: Prioritaskan dari getvideo, tapi jika kosong pakai dari detail (re-mapping)
             let subtitles = subtitlesFromVideo.length > 0 ? subtitlesFromVideo : (targetEpisode.subtitles || []);
 
-            // FIX: Tambahkan proxy ke semua subtitle URL agar bisa dikonversi SRT -> VTT dan bypass CORS
-            // Menggunakan URL absolut agar bekerja meskipun dipanggil dari frontend yang berbeda domain
-            subtitles = subtitles.map(s => ({
-                ...s,
-                url: s.url.startsWith('http') ? `/api/proxy?url=${encodeURIComponent(s.url)}` : s.url
-            }));
+            // Biarkan subtitle URL apa adanya, biarkan frontend yang melakukan proxy
+            // subtitles = subtitles.map(s => ({ ...s }));
 
             if (mainUrl) {
                 return {
