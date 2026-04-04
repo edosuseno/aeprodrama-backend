@@ -113,6 +113,28 @@ class StardustTVService extends BaseProvider {
     }
 
     /**
+     * Helper mapping untuk standarisasi properti drama
+     */
+    _mapDramaItem(item) {
+        if (!item) return null;
+        const id = item.id || item.shortPlayId || item.dramaId || item.bookId;
+        const title = item.title || item.name || item.shortPlayName || item.bookName || 'Untitled';
+        const cover = item.poster || item.image || item.shortPlayCover || item.cover || item.book_pic || item.posterUrl || '';
+        
+        return {
+            ...item, // Tetap bawa data asli
+            id: String(id),
+            title: title,
+            cover: cover,
+            book_id: String(id),
+            book_title: title,
+            book_pic: cover,
+            totalEpisodes: item.totalEpisodes || item.chapterCount || item.total_episodes || 0,
+            provider: 'stardusttv'
+        };
+    }
+
+    /**
      * Ambil katalog drama StardustTV
      */
     async getExplore(page = 1, categoryId = null) {
@@ -132,7 +154,7 @@ class StardustTVService extends BaseProvider {
             });
 
             const items = res.data?.data || res.data || [];
-            return Array.isArray(items) ? items : [];
+            return Array.isArray(items) ? items.map(item => this._mapDramaItem(item)).filter(Boolean) : [];
         } catch (e) {
             console.error(`[StardustTV] Explore failed: ${e.message}`);
             return [];
@@ -209,7 +231,8 @@ class StardustTVService extends BaseProvider {
                     page_size: 20
                 }
             });
-            return res.data?.data || res.data || [];
+            const items = res.data?.data || res.data || [];
+            return Array.isArray(items) ? items.map(item => this._mapDramaItem(item)).filter(Boolean) : [];
         } catch (e) {
             console.error(`[StardustTV] Search failed: ${e.message}`);
             return [];
