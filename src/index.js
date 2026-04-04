@@ -79,6 +79,9 @@ const handleProxyRequest = async (req, res) => {
             origin = 'https://www.vidrama.asia';
         }
 
+        const isM3U8 = lowerUrl.includes('.m3u8');
+        const isTextParams = isSubtitle || isM3U8;
+
         const response = await axios({
             method: 'get',
             url: targetUrl,
@@ -88,30 +91,81 @@ const handleProxyRequest = async (req, res) => {
                 'Origin': origin,
                 'host': new URL(targetUrl).host
             },
-            responseType: isSubtitle ? 'text' : 'stream',
+            responseType: isTextParams ? 'text' : 'stream',
             timeout: 10000,
             validateStatus: false
         });
 
         res.setHeader('Access-Control-Allow-Origin', '*');
 
+        const contentType = response.headers['content-type'] || '';
+
+        // --- SUBTITLE REWRITE ---
         if (isSubtitle && response.status === 200) {
             let content = response.data;
             if (typeof content !== 'string') content = content.toString('utf8');
 
-            // Bersihkan BOM jika ada
             content = content.replace(/^\ufeff/, '').trim();
-
             let vttContent = content;
             if (!content.startsWith('WEBVTT')) {
-                // Regex Robust: Menangani jam 1-2 digit, menit/detik 2 digit, milidetik 2-3 digit
                 vttContent = 'WEBVTT\n\n' + content.replace(/(\d{1,2}:\d{2}:\d{2}),(\d{2,3})/g, '$1.$2');
             }
             return res.status(200).type('text/vtt; charset=utf-8').send(vttContent);
         }
 
+        // --- M3U8 REWRITE ---
+        if (isM3U8 || contentType.includes('mpegurl') || contentType.includes('hls')) {
+            let text = '';
+            if (response.data && typeof response.data[Symbol.asyncIterator] === 'function') {
+                for await (const chunk of response.data) {
+                    text += chunk.toString('utf8');
+                }
+            } else {
+                text = response.data.toString('utf8');
+            }
+
+            const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+            const parentUrlObj = new URL(targetUrl);
+
+            const proxyRewrite = (uri) => {
+                let cleanUri = uri.replace(/^["'](.*)["']$/, '$1');
+                let absoluteUrl = cleanUri;
+                if (!cleanUri.startsWith('http')) {
+                    try {
+                        const urlObj = new URL(cleanUri, baseUrl);
+                        if (urlObj.search === '') {
+                            parentUrlObj.searchParams.forEach((value, key) => {
+                                urlObj.searchParams.set(key, value);
+                            });
+                        }
+                        absoluteUrl = urlObj.toString();
+                    } catch (e) { return uri; }
+                }
+                return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+            };
+
+            text = text.split('\n').map(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return line;
+
+                if (trimmed.startsWith('#') && trimmed.includes('URI=')) {
+                    return trimmed.replace(/URI=(['"]?)(.*?)\1/g, (m, quote, uri) => {
+                        return `URI="${proxyRewrite(uri)}"`;
+                    });
+                }
+                
+                if (!trimmed.startsWith('#')) {
+                    return proxyRewrite(trimmed);
+                }
+                return line;
+            }).join('\n');
+
+            return res.status(response.status).type('application/vnd.apple.mpegurl').send(text);
+        }
+
+        // --- NORMAL STREAM ---
         res.status(response.status);
-        if (response.headers['content-type']) res.type(response.headers['content-type']);
+        if (contentType) res.type(contentType);
 
         if (response.data && typeof response.data.pipe === 'function') {
             response.data.pipe(res);
@@ -134,7 +188,7 @@ app.get('/', (req, res) => res.send('AE PRO DRAMA BACKEND API IS RUNNING'));
 const isMainModule = import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` || process.argv[1].endsWith('index.js');
 
 if (isMainModule || (process.env.VERCEL && process.env.NODE_ENV === 'production')) {
-    app.listen(PORT, () => console.log(`Backend server matching your request is running on port ${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => console.log(`Backend server matching your request is running on port ${PORT}`));
 }
 
 export default app;
