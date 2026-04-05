@@ -119,10 +119,15 @@ class StardustTVService extends BaseProvider {
         if (!item) return null;
         const id = item.id || item.shortPlayId || item.dramaId || item.bookId;
         const title = item.title || item.name || item.shortPlayName || item.bookName || 'Untitled';
-        const cover = item.poster || item.image || item.shortPlayCover || item.cover || item.book_pic || item.posterUrl || '';
+        let cover = item.poster || item.image || item.shortPlayCover || item.cover || item.book_pic || item.posterUrl || '';
         
+        // Fix: Jika cover hanya ID file (misal: 12345.jpg), lengkapi dengan host Supabase
+        if (cover && !cover.startsWith('http')) {
+            cover = `https://gkcnbnlfqdlotnjaizxx.supabase.co/storage/v1/object/public/posters/${cover}`;
+        }
+
         return {
-            ...item, // Tetap bawa data asli
+            ...item,
             id: String(id),
             title: title,
             cover: cover,
