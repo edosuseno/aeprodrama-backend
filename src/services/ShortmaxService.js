@@ -260,6 +260,23 @@ class ShortmaxService extends BaseProvider {
     }
 
     async search(keyword) {
+        console.log(`[Shortmax] Searching (RSC): ${keyword}...`);
+        try {
+            const rsc = await this._callAction(this.actions.SEARCH, [keyword]);
+            const data = this._parseRsc(rsc, 'dataList');
+            if (data && Array.isArray(data.dataList)) {
+                return data.dataList.map(item => ({
+                    id: String(item.shortPlayId || item.id),
+                    shortPlayId: String(item.shortPlayId || item.id),
+                    title: (item.title || item.shortPlayName || '').replace(/^\[.*?\]/, '').trim(),
+                    cover: item.cover || item.shortPlayCover || '',
+                    totalEpisodes: item.episodeCount || 0,
+                    provider: 'shortmax'
+                }));
+            }
+        } catch (e) {
+            console.error(`[Shortmax] Search failed: ${e.message}`);
+        }
         return [];
     }
 

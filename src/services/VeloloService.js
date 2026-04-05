@@ -212,19 +212,56 @@ class VeloloService extends BaseProvider {
     }
 
     async search(keyword) {
+        console.log(`[Velolo] 🔎 Searching (Original): ${keyword}...`);
         try {
-            const res = await this._requestWithAuth({
-                method: 'GET',
-                url: `${this.baseUrl}/api/velolo?action=search&keyword=${encodeURIComponent(keyword)}`
+            const data = await this._pureRequest(`${this.baseUrl}/api/velolo/search`, { 
+                q: keyword,
+                keyword: keyword,
+                query: keyword 
+            }, 2, {
+                forceReferer: 'https://vidrama.asia/'
             });
-            const items = (res.data?.data || res.data || []).map(item => ({
-                id: item.id,
-                title: item.title || item.name,
-                cover: item.cover ? `https://wsrv.nl/?url=${encodeURIComponent(item.cover)}&w=300&output=webp` : '',
-                provider: 'velolo'
-            }));
+
+            console.log(`[Velolo] Raw Data Received: ${JSON.stringify(data).substring(0, 200)}`);
+            
+            // Handle jika data dibungkus dalam properti 'data'
+            const list = data?.dataList || data?.rows || data?.data || data || [];
+            
+            // LOG SELURUH PROPERTY UNTUK DEBUGGING JUDUL
+            if (list.length > 0) {
+                console.log("[Velolo] 🔍 DEBUG FIELDS (Item 0):", Object.keys(list[0]).join(", "));
+                console.log("[Velolo] 🔍 FULL ITEM DATA:", JSON.stringify(list[0], null, 2));
+            }
+
+            const items = (Array.isArray(list) ? list : []).map(item => {
+                const id = item.id || item.intId || item.dramaId || '';
+                // Prioritaskan 'name' karena dari investigasi ini yang paling lengkap judulnya di Velolo
+                const title = item.name || item.title || item.book_name || item.attention || '';
+                let cover = item.cover || item.image || item.thumb_url || item.poster || '';
+                
+                if (cover && !cover.startsWith('http')) {
+                    cover = `https://vidrama.asia${cover.startsWith('/') ? '' : '/'}${cover}`;
+                }
+
+                return {
+                    id: String(id),
+                    title: title,
+                    cover: cover ? `https://wsrv.nl/?url=${encodeURIComponent(cover)}&w=300&output=webp` : '',
+                    totalEpisodes: item.episode || item.chapterCount || item.total_episodes || 0,
+                    provider: 'velolo'
+                };
+            }).filter(i => i.id && i.title);
+
+            if (items.length > 0) {
+                console.log(`[Velolo] Final Result Sample: ID=${items[0].id}, Title="${items[0].title}", Eps=${items[0].totalEpisodes}`);
+            }
+            
+            console.log(`[Velolo] ✅ Found ${items.length} items for "${keyword}"`);
             return items;
-        } catch (e) { return []; }
+        } catch (e) { 
+            console.error(`[Velolo] Search failed: ${e.message}`);
+            return [];
+        }
     }
 }
 

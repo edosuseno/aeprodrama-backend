@@ -262,8 +262,11 @@ class BaseProvider {
             if (forceReferer) headers['Referer'] = forceReferer;
             if (forceOrigin) headers['Origin'] = forceOrigin;
 
-            // [FIX] Inject Auth Headers jika request ke Sansekai
-            if (path.includes('sansekai.my.id') || (this.baseUrl && path.includes(this.baseUrl))) {
+            // [FIX] Inject Auth Headers jika request ke Sansekai (dan BUKAN rute Velolo/StardustTV yang sudah punya sistem sendiri)
+            const isOriginalAggregator = path.includes('sansekai.my.id') || (this.baseUrl && path.includes(this.baseUrl));
+            const isVeloloOrStardust = path.includes('velolo') || path.includes('stardusttv');
+
+            if (isOriginalAggregator && !isVeloloOrStardust) {
                 // Trik: Gunakan identitas 'dramabox' karena terbukti lebih stabil/tidak di-block
                 const authHeaders = TokenGenerator.generateRequestHeaders('dramabox', params);
                 Object.assign(headers, authHeaders);
