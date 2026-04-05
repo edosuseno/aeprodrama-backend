@@ -179,6 +179,7 @@ const handleProxyRequest = async (req, res) => {
 };
 
 app.get('/api/proxy', handleProxyRequest);
+app.get('/api/image-proxy', handleProxyRequest);
 app.get('/api/subtitle-proxy', handleProxyRequest);
 
 app.get('/', (req, res) => res.send('AE PRO DRAMA BACKEND API IS RUNNING'));

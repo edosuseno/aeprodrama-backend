@@ -121,9 +121,10 @@ class StardustTVService extends BaseProvider {
         const title = item.title || item.name || item.shortPlayName || item.bookName || 'Untitled';
         let cover = item.poster || item.image || item.shortPlayCover || item.cover || item.book_pic || item.posterUrl || '';
         
-        // Fix: Jika cover hanya ID file (misal: 12345.jpg), lengkapi dengan host Supabase
+        // Fix: Jika cover hanya ID file (misal: 12345.jpg), lengkapi dengan host aset StardustTV asli
         if (cover && !cover.startsWith('http')) {
-            cover = `https://gkcnbnlfqdlotnjaizxx.supabase.co/storage/v1/object/public/posters/${cover}`;
+            // Berdasarkan debug, host yang benar adalah assets.stardusttv.cc
+            cover = `https://assets.stardusttv.cc/uploadfile/${cover}`;
         }
 
         return {
