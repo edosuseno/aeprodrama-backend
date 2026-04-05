@@ -275,24 +275,47 @@ class Dramabox2Service extends BaseProvider {
     }
 
     async search(keyword) {
+        console.log(`[Dramabox2] 🔎 Searching (via Melolo Aggregator): ${keyword}`);
         try {
-            console.log(`[Dramabox2] 🔎 Searching Original: ${keyword}`);
-            // Gunakan API search melolo/meloshort tapi filter provider 'dramabox2' di frontend (opsional)
-            // Atau coba cari endpoint search khusus dramabox2 jika ada
-            const res = await this._requestWithAuth({
-                method: 'GET',
-                url: `${this.baseUrl}/api/melolo?action=search&keyword=${encodeURIComponent(keyword)}`,
-                headers: { 'Accept': 'application/json' }
+            // Bypass rute asli Dramabox2 yg kosong/expired, numpang ke aggregator Melolo pubik
+            const data = await this._pureRequest(`https://vidrama.asia/api/melolo`, {
+                action: 'search',
+                keyword: keyword
+            }, 2, {
+                forceReferer: 'https://vidrama.asia/'
             });
 
-            const data = res.data?.data || res.data;
-            const items = (Array.isArray(data) ? data : []).map(item => ({
-                id: String(item.id),
-                title: item.title,
-                cover: (item.cover || '').replace(/\\/g, ''),
-                provider: 'dramabox2'
-            }));
+            const list = data?.dataList || data?.rows || data?.data || data || [];
+            
+            const items = (Array.isArray(list) ? list : []).map(item => {
+                const id = item.id || item.intId || item.dramaId || item.short_play_id || '';
+                const title = item.name || item.title || item.book_name || '';
+                let cover = item.image || item.cover || item.thumb_url || item.poster || '';
+                
+                if (cover && !cover.startsWith('http')) {
+                    cover = `https://vidrama.asia${cover.startsWith('/') ? '' : '/'}${cover}`;
+                }
 
+                // FIX: Cegah wsrv.nl double-wrap yang memicu Error 404 seperti laporan
+                let finalCover = '';
+                if (cover) {
+                    if (cover.includes('wsrv.nl')) {
+                        finalCover = cover;
+                    } else {
+                        finalCover = `https://wsrv.nl/?url=${encodeURIComponent(cover)}&w=300&output=webp`;
+                    }
+                }
+
+                return {
+                    id: String(id),
+                    title: title,
+                    cover: finalCover,
+                    totalEpisodes: item.episode || item.chapterCount || item.total_episodes || 0,
+                    provider: 'dramabox2'
+                };
+            }).filter(i => i.id && i.title);
+
+            console.log(`[Dramabox2] ✅ Found ${items.length} items for "${keyword}"`);
             return items;
         } catch (e) {
             console.error(`[Dramabox2] search Error: ${e.message}`);

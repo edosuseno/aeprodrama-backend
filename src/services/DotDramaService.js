@@ -177,24 +177,48 @@ class DotDramaService extends BaseProvider {
     }
 
     async search(keyword) {
+        console.log(`[DotDrama] 🔎 Searching (via Melolo Aggregator): ${keyword}`);
         try {
-            const res = await this._requestWithAuth({
-                method: 'GET',
-                url: this.baseUrl,
-                params: { action: 'search', q: keyword }
+            // Kita bypass auth token yang expired dengan menumpang di rute Melolo yang terbuka untuk publik
+            const data = await this._pureRequest(`https://vidrama.asia/api/melolo`, {
+                action: 'search',
+                keyword: keyword
+            }, 2, {
+                forceReferer: 'https://vidrama.asia/'
             });
 
-            const items = res.data?.data || res.data || [];
-            return items.map(item => {
-                const originalCover = item.cover || item.poster;
+            const list = data?.dataList || data?.rows || data?.data || data || [];
+            
+            const items = (Array.isArray(list) ? list : []).map(item => {
+                const id = item.id || item.intId || item.short_play_id || '';
+                const title = item.name || item.title || item.book_name || '';
+                let cover = item.image || item.cover || item.thumb_url || item.poster || '';
+                
+                if (cover && !cover.startsWith('http')) {
+                    cover = `https://vidrama.asia${cover.startsWith('/') ? '' : '/'}${cover}`;
+                }
+
+                // FIX: Hindari wsrv.nl membungkus wsrv.nl lagi (menghindari 404 dari double auth)
+                let finalCover = '';
+                if (cover) {
+                    if (cover.includes('wsrv.nl')) {
+                        finalCover = cover;
+                    } else {
+                        finalCover = `https://wsrv.nl/?url=${encodeURIComponent(cover)}&w=300&output=webp`;
+                    }
+                }
+
                 return {
-                    id: item.id || item.short_play_id,
-                    title: item.title || item.name,
-                    cover: `https://wsrv.nl/?url=${encodeURIComponent(originalCover)}&w=300&output=webp`,
-                    chapterCount: item.total_episodes || 0,
+                    id: String(id),
+                    title: title,
+                    cover: finalCover,
+                    chapterCount: item.episode || item.chapterCount || item.total_episodes || 0,
                     provider: 'dotdrama'
                 };
-            });
+            }).filter(i => i.id && i.title);
+
+            console.log(`[DotDrama] ✅ Found ${items.length} items (via Melolo) for "${keyword}"`);
+            return items;
         } catch (e) {
             console.error('[DotDrama] Search Error:', e.message);
             return [];

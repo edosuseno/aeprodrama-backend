@@ -1,7 +1,7 @@
 import BaseProvider from './BaseProvider.js';
 import Drama from '../models/Drama.js';
 import mongoose from 'mongoose';
-
+import axios from 'axios';
 /**
  * DRAMANOVA SERVICE
  * Menggunakan API aggregator Sansekai untuk performa yang lebih stabil.
@@ -134,6 +134,85 @@ class DramanovaService extends BaseProvider {
             console.warn(`[Dramanova] Komik error: ${e.message}`);
         }
         return [];
+    }
+
+    /**
+     * Mencari Drama di Dramanova (Menggunakan RSC Bypass ke Vidrama/Melolo)
+     */
+    async search(keyword) {
+        try {
+            console.log(`[Dramanova] 🔎 Searching (RSC): ${keyword}`);
+            const url = `https://vidrama.asia/search?q=${encodeURIComponent(keyword)}&provider=dramanova`;
+            const nextActionId = '70c18f6e0c27f60d1b86df02893991f65c74bb76e0';
+
+            const res = await axios.post(url, `["${keyword}"]`, {
+                headers: {
+                    'content-type': 'text/plain;charset=UTF-8',
+                    'next-action': nextActionId,
+                    'accept': 'text/x-component',
+                    'User-Agent': 'Mozilla/5.0'
+                },
+                timeout: 10000
+            });
+
+            const content = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+            const items = [];
+
+            const patterns = [
+                /["']shortPlayId["']\s*:\s*["']?(\w+|[0-9]+)["']?\s*,\s*["']shortPlayName["']\s*:\s*["']([^"']+)["']\s*,\s*["']shortPlayCover["']\s*:\s*["']([^"']+)["']/g,
+                /{\s*["']id["']\s*:\s*["']?(\w+|[0-9]+)["']?\s*,\s*["']title["']\s*:\s*["']([^"']+)["']\s*,\s*["']cover["']\s*:\s*["']([^"']+)["']/g
+            ];
+
+            for (const regex of patterns) {
+                let match;
+                while ((match = regex.exec(content)) !== null) {
+                    const id = match[1];
+                    const title = match[2];
+                    const cover = match[3].replace(/\\u0026/g, '&').replace(/\\/g, '');
+
+                    if (!items.find(i => i.id === id)) {
+                        let finalCover = cover;
+                        if (cover && !cover.includes('wsrv.nl')) {
+                            finalCover = `https://wsrv.nl/?url=${encodeURIComponent(cover)}&w=300&output=webp`;
+                        }
+
+                        items.push({
+                            id,
+                            title,
+                            cover: finalCover,
+                            provider: 'dramanova'
+                        });
+                    }
+                }
+                if (items.length > 0) break;
+            }
+
+            // [FITUR BARU] Cek juga memori eksklusif 18+ secara lokal
+            // Karena server Vidrama sering menyembunyikan konten 18+ dari mesin pencari utamanya
+            try {
+                const adultItems = await this.getDrama18(1);
+                if (adultItems && adultItems.length > 0) {
+                    const filteredAdult = adultItems.filter(a => 
+                        a.title && a.title.toLowerCase().includes(keyword.toLowerCase())
+                    );
+                    
+                    for (const adlt of filteredAdult) {
+                        // Jangan masukkan jika sudah ada dari hasil pencarian utama
+                        if (!items.find(i => i.id === adlt.id)) {
+                            items.push(adlt);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn(`[Dramanova] Adult search merge failed: ${err.message}`);
+            }
+
+            console.log(`[Dramanova] ✅ Search found ${items.length} items for "${keyword}" (incl. 18+)`);
+            return items;
+        } catch (e) {
+            console.error(`[Dramanova] Search Error: ${e.message}`);
+            return [];
+        }
     }
 
     /**

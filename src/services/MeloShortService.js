@@ -261,21 +261,47 @@ class MeloShortService extends BaseProvider {
     }
 
     async search(keyword) {
+        console.log(`[MeloShort] 🔎 Searching (via Melolo Aggregator): ${keyword}`);
         try {
-            console.log(`[MeloShort] 🔎 Searching: ${keyword}`);
-            const res = await this._requestWithAuth({
-                method: 'GET',
-                url: `${this.baseUrl}/api/melolo?action=search&keyword=${encodeURIComponent(keyword)}`
+            // Gunakan _pureRequest untuk bypass Token yang rawan Expired / 401 Unauthorized
+            const data = await this._pureRequest(`https://vidrama.asia/api/melolo`, {
+                action: 'search',
+                keyword: keyword
+            }, 2, {
+                forceReferer: 'https://vidrama.asia/'
             });
 
-            const data = res.data?.data || res.data;
-            const items = (data || []).map(item => ({
-                id: item.id,
-                title: item.title,
-                cover: item.cover,
-                provider: 'meloshort'
-            }));
+            const list = data?.dataList || data?.rows || data?.data || data || [];
+            
+            const items = (Array.isArray(list) ? list : []).map(item => {
+                const id = item.id || item.intId || item.dramaId || item.short_play_id || '';
+                const title = item.name || item.title || item.book_name || '';
+                let cover = item.image || item.cover || item.thumb_url || item.poster || '';
+                
+                if (cover && !cover.startsWith('http')) {
+                    cover = `https://vidrama.asia${cover.startsWith('/') ? '' : '/'}${cover}`;
+                }
 
+                // Cegah double wsrv.nl yang bikin error 404
+                let finalCover = '';
+                if (cover) {
+                    if (cover.includes('wsrv.nl')) {
+                        finalCover = cover;
+                    } else {
+                        finalCover = `https://wsrv.nl/?url=${encodeURIComponent(cover)}&w=300&output=webp`;
+                    }
+                }
+
+                return {
+                    id: String(id),
+                    title: title,
+                    cover: finalCover,
+                    chapterCount: item.episode || item.chapterCount || item.total_episodes || 0,
+                    provider: 'meloshort'
+                };
+            }).filter(i => i.id && i.title);
+
+            console.log(`[MeloShort] ✅ Found ${items.length} items for "${keyword}"`);
             return items;
         } catch (e) {
             console.error(`[MeloShort] search Error: ${e.message}`);

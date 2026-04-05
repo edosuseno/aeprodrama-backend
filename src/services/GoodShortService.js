@@ -438,29 +438,47 @@ class GoodShortService extends BaseProvider {
 
     async search(keyword) {
         try {
-            console.log(`[GoodShort] 🔎 Searching: ${keyword}`);
-            // Vidrama menggunakan endpoint /search dengan provider filter
+            console.log(`[GoodShort] 🔎 Searching (RSC Pure): ${keyword}`);
             const url = `https://vidrama.asia/search?q=${encodeURIComponent(keyword)}&provider=goodshort`;
             const nextActionId = '70c18f6e0c27f60d1b86df02893991f65c74bb76e0';
 
-            const res = await this._requestWithAuth({
-                method: 'POST',
-                url,
-                data: `["${keyword}"]`,
+            // Bypass token Auth menggunakan _pureRequest ke Rute RSC
+            const res = await this._pureRequest(url, `["${keyword}"]`, 2, {
+                forceReferer: 'https://vidrama.asia/'
+            });
+
+            // _pureRequest bisa saja mengembalikan objek jika sebelumnya ter-cache dalam JSON.
+            // RSC Action dari NextJS akan return string tipe RSC.
+            let content = '';
+            // Karena _pureRequest menggunakan axios.get default jika kita memberikan object,
+            // Namun untuk RSC kita HARUS menggunakan POST.
+            // AHA! _pureRequest pada BaseProvider mendukung axios.get jika options bukan method POST.
+            // mari gunakan trik bypass tanpa token secara manual jika gagal dengan GET:
+        } catch(e) {}
+        
+        // REWRITE CARA AMAN (Tanpa_pureRequest karena RSC _harus_ POST raw string):
+        try {
+            console.log(`[GoodShort] 🔎 Searching (RSC Manual Bypass Auth): ${keyword}`);
+            const url = `https://vidrama.asia/search?q=${encodeURIComponent(keyword)}&provider=goodshort`;
+            const nextActionId = '70c18f6e0c27f60d1b86df02893991f65c74bb76e0';
+
+            const res = await axios.post(url, `["${keyword}"]`, {
                 headers: {
                     'content-type': 'text/plain;charset=UTF-8',
                     'next-action': nextActionId,
                     'accept': 'text/x-component',
-                }
+                    'User-Agent': 'Mozilla/5.0'
+                },
+                timeout: 10000
             });
 
             const content = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
             const items = [];
 
-            // Mencoba beberapa pola parsing untuk hasil pencarian dalam RSC
+            // Memperlebar Regex agar support angka tanpa tanda kutip (ex: "id":78)
             const patterns = [
-                /["']shortPlayId["']\s*:\s*["'](\d+)["']\s*,\s*["']shortPlayName["']\s*:\s*["']([^"']+)["']\s*,\s*["']shortPlayCover["']\s*:\s*["']([^"']+)["']/g,
-                /{\s*["']id["']\s*:\s*["'](\d+)["']\s*,\s*["']title["']\s*:\s*["']([^"']+)["']\s*,\s*["']cover["']\s*:\s*["']([^"']+)["']/g
+                /["']shortPlayId["']\s*:\s*["']?(\w+|[0-9]+)["']?\s*,\s*["']shortPlayName["']\s*:\s*["']([^"']+)["']\s*,\s*["']shortPlayCover["']\s*:\s*["']([^"']+)["']/g,
+                /{\s*["']id["']\s*:\s*["']?(\w+|[0-9]+)["']?\s*,\s*["']title["']\s*:\s*["']([^"']+)["']\s*,\s*["']cover["']\s*:\s*["']([^"']+)["']/g
             ];
 
             for (const regex of patterns) {
@@ -471,10 +489,15 @@ class GoodShortService extends BaseProvider {
                     const cover = match[3].replace(/\\u0026/g, '&').replace(/\\/g, '');
 
                     if (!items.find(i => i.id === id)) {
+                        let finalCover = cover;
+                        if (cover && !cover.includes('wsrv.nl')) {
+                            finalCover = `https://wsrv.nl/?url=${encodeURIComponent(cover)}&w=300&output=webp`;
+                        }
+
                         items.push({
                             id,
                             title,
-                            cover,
+                            cover: finalCover,
                             provider: 'goodshort'
                         });
                     }
