@@ -39,8 +39,13 @@ class BaseProvider {
 
         // Secret Key untuk enkripsi ke Frontend
         // Fix: Added .trim().replace(/\\r\\n|\\r|\\n/g, '') to handle Vercel copy-paste mistakes
-        let secret = process.env.API_SECRET || 'Sansekai-SekaiDrama';
-        this.secretKey = secret.replace(/\r\n|\r|\n/g, '').trim();
+        // Ambil secret dari env dengan fallback default
+        let secret = process.env.API_SECRET || process.env.CRYPTO_SECRET || 'Sansekai-SekaiDrama';
+        
+        // Pastikan secret adalah string untuk menghindari crash .replace()
+        if (typeof secret !== 'string') secret = String(secret || 'Sansekai-SekaiDrama');
+        
+        this.secretKey = secret.replace(/\r\n|\r|\n/g, '').replace(/['"]/g, '').trim();
 
         this.api = axios.create({
             baseURL: this.baseUrl,
@@ -61,6 +66,7 @@ class BaseProvider {
      */
     getBackendUrl() {
         let url = process.env.BACKEND_URL;
+        if (url) url = url.replace(/['"]/g, ''); // Hapus tanda kutip jika ada
         
         // Deteksi fitur Vercel (System Variable)
         if (!url && process.env.VERCEL_URL) {

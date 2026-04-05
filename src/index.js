@@ -184,11 +184,18 @@ app.get('/api/subtitle-proxy', handleProxyRequest);
 app.get('/', (req, res) => res.send('AE PRO DRAMA BACKEND API IS RUNNING'));
 
 // --- START SERVER ---
-// Hindari duplicate listen jika diimport untuk testing
-const isMainModule = import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` || process.argv[1].endsWith('index.js');
+// Hindari duplicate listen jika diimport untuk testing atau di Vercel
+const isVercel = !!process.env.VERCEL;
+const isMain = import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` || process.argv[1].endsWith('index.js');
 
-if (isMainModule || (process.env.VERCEL && process.env.NODE_ENV === 'production')) {
-    app.listen(PORT, '0.0.0.0', () => console.log(`Backend server matching your request is running on port ${PORT}`));
+if (!isVercel && (isMain || process.env.PM2_HOME)) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log('================================================');
+        console.log(`🚀 AE PRO BACKEND AKTIF DI PORT ${PORT}`);
+        console.log(`🔗 API ROOT: http://localhost:${PORT}/api`);
+        console.log(`📅 START TIME: ${new Date().toLocaleString()}`);
+        console.log('================================================');
+    });
 }
 
 export default app;
