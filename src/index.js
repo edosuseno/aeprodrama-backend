@@ -71,16 +71,21 @@ const handleProxyRequest = async (req, res) => {
         // Cek apakah ini subtitle (SRT/VTT)
         const isSubtitle = lowerUrl.includes('.srt') || lowerUrl.includes('.vtt') || lowerUrl.includes('mime_type=text_plain') || targetUrl.includes('hikeuniverses.xyz');
 
-        let referer = 'https://vidrama.asia/';
-        let origin = 'https://vidrama.asia';
+        let referer = req.query.referer || 'https://vidrama.asia/';
+        let origin = req.query.origin || 'https://vidrama.asia';
 
-        // Khusus Velolo gunakan referer vidrama.asia agar tembus blokir
-        if (targetUrl.includes('velolo') || targetUrl.includes('melolo')) {
-            referer = 'https://vidrama.asia/';
-            origin = 'https://vidrama.asia';
-        } else if (targetUrl.includes('sansekai') || targetUrl.includes('hikeuniverses')) {
-            referer = 'https://www.vidrama.asia/';
-            origin = 'https://www.vidrama.asia';
+        // Auto-detect referer if not explicitly provided
+        if (!req.query.referer) {
+            if (targetUrl.includes('velolo') || targetUrl.includes('melolo')) {
+                referer = 'https://vidrama.asia/';
+                origin = 'https://vidrama.asia';
+            } else if (targetUrl.includes('sansekai') || targetUrl.includes('hikeuniverses')) {
+                referer = 'https://www.vidrama.asia/';
+                origin = 'https://www.vidrama.asia';
+            } else if (targetUrl.includes('dramabox') || targetUrl.includes('cdndramatic')) {
+                referer = 'https://www.drama-box.com/';
+                origin = 'https://www.drama-box.com';
+            }
         }
 
         const isM3U8 = lowerUrl.includes('.m3u8');
@@ -145,7 +150,7 @@ const handleProxyRequest = async (req, res) => {
                         absoluteUrl = urlObj.toString();
                     } catch (e) { return uri; }
                 }
-                return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+                return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}${req.query.referer ? `&referer=${encodeURIComponent(req.query.referer)}` : ''}`;
             };
 
             text = text.split('\n').map(line => {

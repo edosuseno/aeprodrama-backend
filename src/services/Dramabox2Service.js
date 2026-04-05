@@ -286,12 +286,12 @@ class Dramabox2Service extends BaseProvider {
             });
 
             const list = data?.dataList || data?.rows || data?.data || data || [];
-            
+
             const items = (Array.isArray(list) ? list : []).map(item => {
                 const id = item.id || item.intId || item.dramaId || item.short_play_id || '';
                 const title = item.name || item.title || item.book_name || '';
                 let cover = item.image || item.cover || item.thumb_url || item.poster || '';
-                
+
                 if (cover && !cover.startsWith('http')) {
                     cover = `https://vidrama.asia${cover.startsWith('/') ? '' : '/'}${cover}`;
                 }
