@@ -26,7 +26,8 @@ class MovieBoxVidSrcService extends BaseProvider {
     // Helper to build TMDB request URL
     _tmdbUrl(endpoint, params = {}) {
         const url = new URL(`${this.baseUrl}${endpoint}`);
-        url.searchParams.append('api_key', this.tmdbApiKey);
+        const apiKey = process.env.TMDB_API_KEY || '6e4753bae68fd1cc02a3ced27fabebd2';
+        url.searchParams.append('api_key', apiKey);
         url.searchParams.append('language', 'en-US');
 
         Object.entries(params).forEach(([key, value]) => {

@@ -3,6 +3,10 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dotenv from 'dotenv';
+
+// --- INITIAL CONFIG ---
+dotenv.config();
+
 import path from 'path';
 import { fileURLToPath } from 'url';
 import connectDB from './config/db.js';
@@ -26,7 +30,7 @@ import reelshortRoutes from './routes/reelshort.js';
 import shortmaxRoutes from './routes/shortmax.js';
 import dotdramaRoutes from './routes/dotdrama.js';
 
-dotenv.config();
+// dotenv.config(); (Moved to Top)
 
 const app = express();
 const PORT = process.env.PORT || 5001;
